@@ -1,0 +1,171 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <style>
+        body {
+            width: 350px;
+            padding: 20px;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        }
+        .header {
+            text-align: center;
+            margin-bottom: 20px;
+        }
+        .header h2 {
+            color: #1a73e8;
+            margin: 0;
+        }
+        .input-section {
+            margin-bottom: 20px;
+        }
+        textarea {
+            width: 100%;
+            height: 100px;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-size: 14px;
+            resize: vertical;
+        }
+        .response-type {
+            margin: 10px 0;
+        }
+        select {
+            width: 100%;
+            padding: 8px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+        }
+        .generate-btn {
+            width: 100%;
+            padding: 12px;
+            background-color: #1a73e8;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            font-size: 16px;
+            cursor: pointer;
+            margin-bottom: 15px;
+        }
+        .generate-btn:hover {
+            background-color: #1557b0;
+        }
+        .generate-btn:disabled {
+            background-color: #ccc;
+            cursor: not-allowed;
+        }
+        .response-section {
+            display: none;
+            border-top: 1px solid #eee;
+            padding-top: 15px;
+        }
+        .response-text {
+            background-color: #f8f9fa;
+            padding: 15px;
+            border-radius: 4px;
+            border-left: 4px solid #1a73e8;
+            margin-bottom: 10px;
+            font-size: 14px;
+            line-height: 1.4;
+        }
+        .copy-btn {
+            background-color: #34a853;
+            color: white;
+            border: none;
+            padding: 8px 16px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 14px;
+        }
+        .copy-btn:hover {
+            background-color: #2d8f47;
+        }
+        .suggestions {
+            margin-top: 15px;
+        }
+        .suggestion {
+            background-color: #fff3cd;
+            padding: 8px;
+            margin: 5px 0;
+            border-radius: 4px;
+            font-size: 12px;
+            cursor: pointer;
+            border: 1px solid #ffeaa7;
+        }
+        .suggestion:hover {
+            background-color: #fff1b3;
+        }
+        .loading {
+            text-align: center;
+            color: #666;
+        }
+        .error {
+            color: #d93025;
+            background-color: #fce8e6;
+            padding: 10px;
+            border-radius: 4px;
+            font-size: 14px;
+        }
+        .quick-actions {
+            margin-top: 10px;
+        }
+        .quick-btn {
+            background-color: #f1f3f4;
+            border: 1px solid #dadce0;
+            padding: 6px 12px;
+            margin: 2px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 12px;
+        }
+        .quick-btn:hover {
+            background-color: #e8eaed;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h2>📧 Email Responder</h2>
+        <p>Generate smart email responses</p>
+    </div>
+
+    <div class="input-section">
+        <textarea id="emailInput" placeholder="Paste the email you want to respond to here..."></textarea>
+        
+        <div class="response-type">
+            <label for="responseType">Response Style:</label>
+            <select id="responseType">
+                <option value="professional">Professional</option>
+                <option value="casual">Casual</option>
+                <option value="quick">Quick</option>
+                <option value="detailed">Detailed</option>
+            </select>
+        </div>
+
+        <div class="quick-actions">
+            <button class="quick-btn" onclick="fillSampleEmail()">Use Sample Email</button>
+            <button class="quick-btn" onclick="clearInput()">Clear</button>
+        </div>
+    </div>
+
+    <button id="generateBtn" class="generate-btn">Generate Response</button>
+
+    <div id="loadingSection" class="loading" style="display: none;">
+        <p> Generating your response...</p>
+    </div>
+
+    <div id="errorSection" class="error" style="display: none;"></div>
+
+    <div id="responseSection" class="response-section">
+        <div id="responseText" class="response-text"></div>
+        <button id="copyBtn" class="copy-btn">Copy Response</button>
+        
+        <div id="suggestions" class="suggestions">
+            <h4>Alternative Suggestions:</h4>
+        </div>
+    </div>
+
+    <script src="popup.js"></script>
+</body>
+</html>

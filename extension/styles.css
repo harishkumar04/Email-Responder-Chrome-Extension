@@ -1,0 +1,27 @@
+/* Styles for Gmail integration */
+
+#email-responder-btn {
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif !important;
+}
+
+/* Ensure our floating button doesn't interfere with Gmail */
+#email-responder-btn * {
+    box-sizing: border-box;
+}
+
+/* Animation for the floating button */
+@keyframes pulse {
+    0% {
+        transform: scale(1);
+    }
+    50% {
+        transform: scale(1.05);
+    }
+    100% {
+        transform: scale(1);
+    }
+}
+
+#email-responder-btn:hover {
+    animation: pulse 1s infinite;
+}
