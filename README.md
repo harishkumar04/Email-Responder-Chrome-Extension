@@ -116,3 +116,4 @@ curl -X POST "http://127.0.0.1:8001/generate-response" \
 ✅ Performance monitoring  
 ✅ Response templates  
 ✅ Generation history
+# Email-Responder-Chrome-Extension
