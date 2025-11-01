@@ -1,6 +1,6 @@
 from fastapi import FastAPI, Request, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, Response
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel
 import sqlite3
@@ -11,11 +11,25 @@ import os
 from dotenv import load_dotenv
 import time
 import hashlib
+import logging
+from prometheus_client import Counter, Histogram, generate_latest, start_http_server
 
-# Load environment variables
+# Configure structured logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s %(levelname)s %(name)s %(message)s'
+)
+logger = logging.getLogger("email_responder")
+
+# Prometheus metrics
+email_requests_total = Counter('email_requests_total', 'Total email requests', ['response_type', 'source'])
+response_time_seconds = Histogram('response_time_seconds', 'Response generation time', ['method'])
+cache_operations_total = Counter('cache_operations_total', 'Cache operations', ['operation', 'result'])
+ai_api_calls_total = Counter('ai_api_calls_total', 'AI API calls', ['model', 'status'])
+database_operations_total = Counter('database_operations_total', 'Database operations', ['operation'])
+
 load_dotenv()
 
-# Simple in-memory cache for faster responses
 response_cache: Dict[str, Dict[str, Any]] = {}
 CACHE_TTL = 1800  # 30 minutes
 
@@ -30,10 +44,14 @@ def get_cached_response(email_content: str, response_type: str) -> Optional[str]
     if key in response_cache:
         cached_item = response_cache[key]
         if time.time() - cached_item['timestamp'] < CACHE_TTL:
-            print("🚀 Cache HIT - returning cached response")
+            cache_operations_total.labels(operation='get', result='hit').inc()
+            logger.info(f"Cache HIT for key: {key[:8]}...")
             return cached_item['response']
         else:
+            cache_operations_total.labels(operation='get', result='expired').inc()
+            logger.info(f"Cache EXPIRED for key: {key[:8]}...")
             del response_cache[key]
+    cache_operations_total.labels(operation='get', result='miss').inc()
     return None
 
 def cache_response(email_content: str, response_type: str, response: str):
@@ -43,6 +61,8 @@ def cache_response(email_content: str, response_type: str, response: str):
         'response': response,
         'timestamp': time.time()
     }
+    cache_operations_total.labels(operation='set', result='success').inc()
+    logger.info(f"Cached response for key: {key[:8]}...")
 
 QUICK_PATTERNS = {
     "thank you": "You're welcome! Happy to help.",
@@ -61,7 +81,6 @@ def get_instant_response(email_content: str) -> Optional[str]:
             return response
     return None
 
-# Import and configure Gemini AI
 try:
     import google.generativeai as genai
     GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
@@ -79,22 +98,31 @@ except ImportError:
 
 app = FastAPI(title="Email Response Generator", version="1.0.0")
 
-# Get the directory where this script is located
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-# Templates setup with absolute path
+
 templates = Jinja2Templates(directory=os.path.join(BASE_DIR, "templates"))
 
-# Enable CORS for Chrome extension
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # In production, specify your extension ID
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# Database setup
+# Metrics endpoint for Prometheus
+@app.get("/metrics")
+def get_metrics():
+    """Prometheus metrics endpoint"""
+    return Response(generate_latest(), media_type="text/plain")
+
+@app.get("/health")
+def health_check():
+    """Health check endpoint"""
+    return {"status": "healthy", "timestamp": datetime.now().isoformat()}
+
 def init_db():
+    database_operations_total.labels(operation='init').inc()
     db_path = os.path.join(BASE_DIR, 'email_responses.db')
     conn = sqlite3.connect(db_path)
     conn.execute('''
@@ -114,6 +142,7 @@ def init_db():
             category TEXT
         )
     ''')
+
     # Add some default templates
     templates = [
         ("Professional Thank You", "Thank you for your email. I appreciate you reaching out about {topic}. I'll review this and get back to you within 24 hours.", "professional"),
@@ -130,12 +159,12 @@ def init_db():
 
 init_db()
 
-# Pydantic models
+
 class EmailRequest(BaseModel):
     email_content: str
     sender: Optional[str] = None
     subject: Optional[str] = None
-    response_type: str = "professional"  # professional, casual, quick, detailed
+    response_type: str = "professional"
 
 class EmailResponse(BaseModel):
     generated_response: str
@@ -271,8 +300,6 @@ async def generate_response(request: EmailRequest):
             conn.close()
         except Exception as db_error:
             print(f"⚠️  Database error (non-critical): {db_error}")
-        
-        # Simple suggestions
         suggestions = ["Adjust tone as needed", "Add timeline if applicable"]
         
         end_time = time.time()
