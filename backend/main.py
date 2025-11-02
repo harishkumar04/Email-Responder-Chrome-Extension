@@ -65,12 +65,13 @@ def cache_response(email_content: str, response_type: str, response: str):
     logger.info(f"Cached response for key: {key[:8]}...")
 
 QUICK_PATTERNS = {
-    "thank you": "You're welcome! Happy to help.",
-    "thanks": "You're welcome!",
-    "meeting": "I'll check my calendar and get back to you with available times.",
-    "urgent": "I understand this is urgent. Reviewing now and will respond shortly.",
-    "follow up": "Thank you for following up. I'll provide an update soon.",
-    "schedule": "Let me check my availability and propose some meeting times.",
+    # Temporarily disabled to force AI responses
+    # "thank you": "You're welcome! Happy to help.",
+    # "thanks": "You're welcome!",
+    # "meeting": "I'll check my calendar and get back to you with available times.",
+    # "urgent": "I understand this is urgent. Reviewing now and will respond shortly.",
+    # "follow up": "Thank you for following up. I'll provide an update soon.",
+    # "schedule": "Let me check my availability and propose some meeting times.",
 }
 
 def get_instant_response(email_content: str) -> Optional[str]:
@@ -86,7 +87,7 @@ try:
     GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
     if GEMINI_API_KEY and GEMINI_API_KEY != "your-gemini-api-key-here":
         genai.configure(api_key=GEMINI_API_KEY)
-        model = genai.GenerativeModel('gemini-1.5-flash')
+        model = genai.GenerativeModel('gemini-1.5-pro')
         AI_ENABLED = True
         print("✅ Gemini AI initialized successfully")
     else:
@@ -253,17 +254,39 @@ async def generate_response(request: EmailRequest):
                 cached=False
             )
         
-        # OPTIMIZATION 3: Use AI with shorter prompt (1-2s)
+        # OPTIMIZATION 3: Use AI with improved prompt (1-2s)
         if AI_ENABLED:
             try:
-                # Much shorter prompt for faster response
-                prompt = f"Reply professionally to: {request.email_content[:300]}"
+                # Improved prompt for better, more contextual responses
+                email_preview = request.email_content[:500]  # Use more context
+                
+                # Determine context and tone
+                context_prompt = f"""
+You are a professional email assistant. Analyze this email and write a thoughtful, appropriate response:
+
+EMAIL TO RESPOND TO:
+{email_preview}
+
+RESPONSE REQUIREMENTS:
+- Tone: {request.response_type}
+- Be specific and relevant to the email content
+- Include actionable next steps when appropriate
+- Keep it concise but complete (2-4 sentences)
+- Sound natural and human-like
+- Address the main points raised
+
+Write only the email response, no explanations:"""
                 
                 ai_start = time.time()
-                response = model.generate_content(prompt)
+                response = model.generate_content(context_prompt)
                 ai_end = time.time()
                 
                 generated_response = response.text.strip()
+                
+                # Clean up the response
+                if generated_response.startswith('"') and generated_response.endswith('"'):
+                    generated_response = generated_response[1:-1]
+                
                 confidence = 0.95
                 
                 # Cache the AI response for future use
@@ -334,17 +357,43 @@ async def generate_response(request: EmailRequest):
         )
 
 def generate_fallback_response(email_content: str) -> str:
-    """Generate a simple fallback response when AI is unavailable"""
+    """Generate a contextual fallback response when AI is unavailable"""
     email_lower = email_content.lower()
     
-    if "thank" in email_lower:
-        return "You're welcome! I'm glad I could help."
-    elif "meeting" in email_lower or "schedule" in email_lower:
-        return "I'll check my calendar and get back to you with available times."
-    elif "urgent" in email_lower:
-        return "I understand this is urgent. I'm reviewing your request now."
+    # Check for return/refund requests first (most specific)
+    if any(word in email_lower for word in ["return", "refund", "exchange"]):
+        return "Thank you for contacting us regarding your return request. I'll review your order details and get back to you within 24 hours with the return procedure and next steps for processing your refund."
+    
+    # Check for billing/payment issues
+    elif any(word in email_lower for word in ["invoice", "payment", "billing", "charge"]):
+        return "Thank you for your message regarding billing. I'll review the details with our accounting team and get back to you with an update within 1-2 business days."
+    
+    # Check for meeting/scheduling requests
+    elif any(word in email_lower for word in ["meeting", "schedule", "call", "appointment"]):
+        return "Thank you for reaching out about scheduling. I'll check my calendar and send you some available time slots within the next 24 hours."
+    
+    # Check for urgent matters
+    elif any(word in email_lower for word in ["urgent", "asap", "immediately", "priority"]):
+        return "I understand this is urgent and requires immediate attention. I'm prioritizing this request and will provide a detailed response within the next few hours."
+    
+    # Check for questions/help requests
+    elif any(word in email_lower for word in ["question", "help", "assistance", "support"]):
+        return "Thank you for your question. I'll review the details carefully and provide you with a comprehensive response shortly."
+    
+    # Check for follow-ups
+    elif any(word in email_lower for word in ["follow up", "following up", "checking in"]):
+        return "Thank you for following up on this matter. I appreciate your patience and will provide you with an update on the current status soon."
+    
+    # Check for proposals/projects
+    elif any(word in email_lower for word in ["proposal", "project", "collaboration"]):
+        return "Thank you for sharing this opportunity. I'm interested in learning more and will review the details to provide you with thoughtful feedback."
+    
+    # Only match "thank you" if it's clearly a thank you message (not part of a request)
+    elif email_lower.strip().startswith(("thank you", "thanks")) and len(email_content.split()) < 20:
+        return "You're very welcome! I'm glad I could help. Please don't hesitate to reach out if you need anything else."
+    
     else:
-        return "Thank you for your email. I'll respond appropriately soon."
+        return "Thank you for your email. I've received your message and will review it carefully to provide you with an appropriate response soon."
 
 @app.get("/templates", response_model=List[Template])
 def get_templates():

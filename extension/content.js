@@ -1,7 +1,7 @@
 // Gmail integration - adds button next to Send button
 console.log('Email Response Generator: Gmail Send button integration loaded');
 
-const API_BASE_URL = 'http://127.0.0.1:8001';
+const API_BASE_URL = 'http://127.0.0.1:8000';
 
 // Listen for messages from popup (keep existing functionality)
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
@@ -104,11 +104,55 @@ async function handleResponseButtonClick(event) {
         // Extract email content from the conversation
         const emailContent = extractEmailContent();
         
-        if (!emailContent) {
-            throw new Error('No email content found. Please make sure you\'re replying to an email.');
+        console.log('Extracted email content:', emailContent);
+        
+        if (!emailContent || emailContent.trim().length === 0) {
+            // If no email content, use a default message
+            console.log('No email content found, using default');
+            const defaultContent = "Please write a professional email response.";
+            
+            // Call API with default content
+            const response = await fetch(`${API_BASE_URL}/generate-response`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    email_content: defaultContent,
+                    response_type: 'professional'
+                })
+            });
+
+            if (!response.ok) {
+                throw new Error(`Server error: ${response.status} - ${response.statusText}`);
+            }
+
+            const data = await response.json();
+            console.log('Generated response:', data.generated_response);
+            
+            // Insert the response into the compose area
+            const inserted = insertResponseIntoCompose(data.generated_response);
+            
+            if (inserted) {
+                // Show success state
+                button.innerHTML = `
+                    <span style="margin-right: 6px; font-size: 14px;">✅</span>
+                    <span>Added!</span>
+                `;
+                button.style.background = 'linear-gradient(135deg, #34a853, #4caf50)';
+            } else {
+                // Fallback: copy to clipboard
+                await navigator.clipboard.writeText(data.generated_response);
+                button.innerHTML = `
+                    <span style="margin-right: 6px; font-size: 14px;">📋</span>
+                    <span>Copied!</span>
+                `;
+                button.style.background = 'linear-gradient(135deg, #ff9800, #ffa726)';
+            }
+            return;
         }
 
-        console.log('Extracted email content:', emailContent.substring(0, 100) + '...');
+        console.log('Using extracted email content:', emailContent.substring(0, 100) + '...');
 
         // Call API to generate response
         const response = await fetch(`${API_BASE_URL}/generate-response`, {
