@@ -14,7 +14,7 @@ import hashlib
 import logging
 from prometheus_client import Counter, Histogram, generate_latest, start_http_server
 
-# Configure structured logging
+# logging
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s %(levelname)s %(name)s %(message)s'
