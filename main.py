@@ -36,8 +36,11 @@ app.add_middleware(
 templates = Jinja2Templates(directory="templates")
 
 # Metrics
-REQUEST_COUNT = Counter('http_requests_total', 'Total HTTP requests', ['method', 'endpoint'])
+REQUEST_COUNT = Counter('http_requests_total', 'Total HTTP requests', ['method', 'endpoint', 'status'])
 REQUEST_DURATION = Histogram('http_request_duration_seconds', 'HTTP request duration')
+CACHE_HITS = Counter('cache_hits_total', 'Cache hits')
+CACHE_MISSES = Counter('cache_misses_total', 'Cache misses')
+AI_FAILURES = Counter('ai_generation_failures_total', 'AI generation failures')
 
 # Models
 class EmailRequest(BaseModel):
@@ -120,8 +123,12 @@ async def generate_response(request: EmailRequest):
         if email_hash in response_cache:
             cached_response, cache_time = response_cache[email_hash]
             if current_time - cache_time < CACHE_TTL:
+                CACHE_HITS.inc()
+                REQUEST_COUNT.labels(method="POST", endpoint="/generate-response", status="200").inc()
                 REQUEST_DURATION.observe(time.time() - start_time)
                 return EmailResponse(**cached_response)
+        
+        CACHE_MISSES.inc()
         
         # Generate AI response if enabled
         if AI_ENABLED:
@@ -165,6 +172,7 @@ Write only the email response, no explanations:
                 
             except Exception as e:
                 logger.error(f"AI generation failed: {e}")
+                AI_FAILURES.inc()
         
         # Fallback response
         fallback_response = generate_fallback_response(request.email_content)
@@ -218,6 +226,32 @@ def save_to_db(email_hash: str, result: dict):
         conn.close()
     except Exception as e:
         logger.error(f"Database save failed: {e}")
+
+@app.post("/webhook/alerts")
+async def receive_alerts(request: Request):
+    """Receive alerts from Alertmanager"""
+    try:
+        alert_data = await request.json()
+        logger.info(f"Received alert: {alert_data}")
+        
+        # Process alerts (you can add Slack/Discord/email notifications here)
+        for alert in alert_data.get('alerts', []):
+            alert_name = alert.get('labels', {}).get('alertname', 'Unknown')
+            status = alert.get('status', 'unknown')
+            summary = alert.get('annotations', {}).get('summary', 'No summary')
+            
+            logger.warning(f"ALERT [{status}]: {alert_name} - {summary}")
+            
+            # Add your notification logic here:
+            # - Send to Slack webhook
+            # - Send email
+            # - Send to Discord
+            # - Store in database
+        
+        return {"status": "received", "alerts_processed": len(alert_data.get('alerts', []))}
+    except Exception as e:
+        logger.error(f"Alert processing failed: {e}")
+        return {"status": "error", "message": str(e)}
 
 @app.get("/stats")
 async def get_stats():
