@@ -80,7 +80,7 @@ if AI_ENABLED and GEMINI_API_KEY:
     try:
         import google.generativeai as genai
         genai.configure(api_key=GEMINI_API_KEY)
-        model = genai.GenerativeModel('gemini-1.5-pro')
+        model = genai.GenerativeModel('gemini-pro')
         logger.info("AI enabled with Gemini")
     except Exception as e:
         logger.error(f"AI initialization failed: {e}")
