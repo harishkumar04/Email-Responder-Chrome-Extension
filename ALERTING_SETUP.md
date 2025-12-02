@@ -1,7 +1,5 @@
 # Alerting Setup
 
-## What I Added:
-
 ### 🚨 Alert Rules (`monitoring/alert_rules.yml`):
 - **ServiceDown**: API is unreachable for 1+ minutes
 - **HighResponseTime**: 95th percentile > 5 seconds
@@ -63,5 +61,3 @@ receivers:
         title: 'Email Responder Alert'
         text: '{{ .CommonAnnotations.summary }}'
 ```
-
-You now have production-grade alerting! 🎉
