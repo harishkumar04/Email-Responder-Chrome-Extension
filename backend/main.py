@@ -12,8 +12,7 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse, Response
 from fastapi.templating import Jinja2Templates
-from prometheus_client import (Counter, Histogram, generate_latest,
-                               start_http_server)
+from prometheus_client import Counter, Histogram, generate_latest, start_http_server
 from pydantic import BaseModel
 
 logging.basicConfig(
