@@ -1,19 +1,20 @@
 # FastAPI Email Responder - Testing CI/CD Pipeline
-from fastapi import FastAPI, Request, HTTPException
+import hashlib
+import json
+import logging
+import os
+import sqlite3
+import time
+from datetime import datetime
+from typing import Any, Dict, List, Optional
+
+from dotenv import load_dotenv
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse, Response
 from fastapi.templating import Jinja2Templates
-from pydantic import BaseModel
-import sqlite3
-from typing import List, Optional, Dict, Any
-import json
-from datetime import datetime
-import os
-from dotenv import load_dotenv
-import time
-import hashlib
-import logging
 from prometheus_client import Counter, Histogram, generate_latest
+from pydantic import BaseModel
 
 # Load environment variables
 load_dotenv()
@@ -37,11 +38,14 @@ app.add_middleware(
 templates = Jinja2Templates(directory="templates")
 
 # Metrics
-REQUEST_COUNT = Counter('http_requests_total', 'Total HTTP requests', ['method', 'endpoint', 'status'])
-REQUEST_DURATION = Histogram('http_request_duration_seconds', 'HTTP request duration')
-CACHE_HITS = Counter('cache_hits_total', 'Cache hits')
-CACHE_MISSES = Counter('cache_misses_total', 'Cache misses')
-AI_FAILURES = Counter('ai_generation_failures_total', 'AI generation failures')
+REQUEST_COUNT = Counter(
+    "http_requests_total", "Total HTTP requests", ["method", "endpoint", "status"]
+)
+REQUEST_DURATION = Histogram("http_request_duration_seconds", "HTTP request duration")
+CACHE_HITS = Counter("cache_hits_total", "Cache hits")
+CACHE_MISSES = Counter("cache_misses_total", "Cache misses")
+AI_FAILURES = Counter("ai_generation_failures_total", "AI generation failures")
+
 
 # Models
 class EmailRequest(BaseModel):
@@ -49,17 +53,20 @@ class EmailRequest(BaseModel):
     sender_name: Optional[str] = None
     context: Optional[str] = None
 
+
 class EmailResponse(BaseModel):
     response: str
     confidence: float
     source: str
     timestamp: str
 
+
 # Database setup
 def init_db():
-    conn = sqlite3.connect('email_responses.db')
+    conn = sqlite3.connect("email_responses.db")
     cursor = conn.cursor()
-    cursor.execute('''
+    cursor.execute(
+        """
         CREATE TABLE IF NOT EXISTS responses (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             email_hash TEXT UNIQUE,
@@ -68,9 +75,11 @@ def init_db():
             source TEXT,
             timestamp TEXT
         )
-    ''')
+    """
+    )
     conn.commit()
     conn.close()
+
 
 # Cache
 response_cache = {}
@@ -83,8 +92,9 @@ GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 if AI_ENABLED and GEMINI_API_KEY:
     try:
         import google.generativeai as genai
+
         genai.configure(api_key=GEMINI_API_KEY)
-        model = genai.GenerativeModel('gemini-pro')
+        model = genai.GenerativeModel("gemini-pro")
         logger.info("AI enabled with Gemini")
     except Exception as e:
         logger.error(f"AI initialization failed: {e}")
@@ -93,44 +103,51 @@ else:
     logger.info("AI disabled or no API key")
     AI_ENABLED = False
 
+
 @app.on_event("startup")
 async def startup_event():
     init_db()
     logger.info("Email Response Generator started")
 
+
 @app.get("/")
 async def root():
     return {"message": "Email Response Generator API", "status": "running"}
+
 
 @app.get("/health")
 async def health_check():
     return {"status": "healthy", "timestamp": datetime.now().isoformat()}
 
+
 @app.get("/metrics")
 async def metrics():
     return Response(generate_latest(), media_type="text/plain")
+
 
 @app.post("/generate-response", response_model=EmailResponse)
 async def generate_response(request: EmailRequest):
     start_time = time.time()
     REQUEST_COUNT.labels(method="POST", endpoint="/generate-response").inc()
-    
+
     try:
         # Create email hash for caching
         email_hash = hashlib.md5(request.email_content.encode()).hexdigest()
-        
+
         # Check cache first
         current_time = time.time()
         if email_hash in response_cache:
             cached_response, cache_time = response_cache[email_hash]
             if current_time - cache_time < CACHE_TTL:
                 CACHE_HITS.inc()
-                REQUEST_COUNT.labels(method="POST", endpoint="/generate-response", status="200").inc()
+                REQUEST_COUNT.labels(
+                    method="POST", endpoint="/generate-response", status="200"
+                ).inc()
                 REQUEST_DURATION.observe(time.time() - start_time)
                 return EmailResponse(**cached_response)
-        
+
         CACHE_MISSES.inc()
-        
+
         # Generate AI response if enabled
         if AI_ENABLED:
             try:
@@ -151,82 +168,88 @@ Guidelines:
 
 Write only the email response, no explanations:
 """
-                
+
                 response = model.generate_content(context_prompt)
                 ai_response = response.text.strip()
-                
+
                 result = {
                     "response": ai_response,
                     "confidence": 0.9,
                     "source": "AI Generated",
-                    "timestamp": datetime.now().isoformat()
+                    "timestamp": datetime.now().isoformat(),
                 }
-                
+
                 # Cache the response
                 response_cache[email_hash] = (result, current_time)
-                
+
                 # Save to database
                 save_to_db(email_hash, result)
-                
+
                 REQUEST_DURATION.observe(time.time() - start_time)
                 return EmailResponse(**result)
-                
+
             except Exception as e:
                 logger.error(f"AI generation failed: {e}")
                 AI_FAILURES.inc()
-        
+
         # Fallback response
         fallback_response = generate_fallback_response(request.email_content)
         result = {
             "response": fallback_response,
             "confidence": 0.7,
             "source": "Template",
-            "timestamp": datetime.now().isoformat()
+            "timestamp": datetime.now().isoformat(),
         }
-        
+
         response_cache[email_hash] = (result, current_time)
         save_to_db(email_hash, result)
-        
+
         REQUEST_DURATION.observe(time.time() - start_time)
         return EmailResponse(**result)
-        
+
     except Exception as e:
         logger.error(f"Error generating response: {e}")
         raise HTTPException(status_code=500, detail="Failed to generate response")
 
+
 def generate_fallback_response(email_content: str) -> str:
     """Generate a contextual fallback response"""
     content_lower = email_content.lower()
-    
-    if any(word in content_lower for word in ['meeting', 'schedule', 'calendar']):
+
+    if any(word in content_lower for word in ["meeting", "schedule", "calendar"]):
         return "Thank you for reaching out. I'll check my calendar and get back to you with available times shortly."
-    elif any(word in content_lower for word in ['opportunity', 'position', 'job']):
+    elif any(word in content_lower for word in ["opportunity", "position", "job"]):
         return "Thank you for sharing this opportunity. I'm interested in learning more and will review the details to provide you with thoughtful feedback."
-    elif any(word in content_lower for word in ['urgent', 'asap', 'immediately']):
+    elif any(word in content_lower for word in ["urgent", "asap", "immediately"]):
         return "I understand this is urgent. I'm reviewing your message now and will respond with the requested information as quickly as possible."
     else:
         return "Thank you for your email. I've received your message and will review it carefully to provide you with a comprehensive response."
 
+
 def save_to_db(email_hash: str, result: dict):
     """Save response to database"""
     try:
-        conn = sqlite3.connect('email_responses.db')
+        conn = sqlite3.connect("email_responses.db")
         cursor = conn.cursor()
-        cursor.execute('''
+        cursor.execute(
+            """
             INSERT OR REPLACE INTO responses 
             (email_hash, response, confidence, source, timestamp)
             VALUES (?, ?, ?, ?, ?)
-        ''', (
-            email_hash,
-            result["response"],
-            result["confidence"],
-            result["source"],
-            result["timestamp"]
-        ))
+        """,
+            (
+                email_hash,
+                result["response"],
+                result["confidence"],
+                result["source"],
+                result["timestamp"],
+            ),
+        )
         conn.commit()
         conn.close()
     except Exception as e:
         logger.error(f"Database save failed: {e}")
+
 
 @app.post("/webhook/alerts")
 async def receive_alerts(request: Request):
@@ -234,51 +257,57 @@ async def receive_alerts(request: Request):
     try:
         alert_data = await request.json()
         logger.info(f"Received alert: {alert_data}")
-        
+
         # Process alerts (you can add Slack/Discord/email notifications here)
-        for alert in alert_data.get('alerts', []):
-            alert_name = alert.get('labels', {}).get('alertname', 'Unknown')
-            status = alert.get('status', 'unknown')
-            summary = alert.get('annotations', {}).get('summary', 'No summary')
-            
+        for alert in alert_data.get("alerts", []):
+            alert_name = alert.get("labels", {}).get("alertname", "Unknown")
+            status = alert.get("status", "unknown")
+            summary = alert.get("annotations", {}).get("summary", "No summary")
+
             logger.warning(f"ALERT [{status}]: {alert_name} - {summary}")
-            
+
             # Add your notification logic here:
             # - Send to Slack webhook
             # - Send email
             # - Send to Discord
             # - Store in database
-        
-        return {"status": "received", "alerts_processed": len(alert_data.get('alerts', []))}
+
+        return {
+            "status": "received",
+            "alerts_processed": len(alert_data.get("alerts", [])),
+        }
     except Exception as e:
         logger.error(f"Alert processing failed: {e}")
         return {"status": "error", "message": str(e)}
+
 
 @app.get("/stats")
 async def get_stats():
     """Get API usage statistics"""
     try:
-        conn = sqlite3.connect('email_responses.db')
+        conn = sqlite3.connect("email_responses.db")
         cursor = conn.cursor()
-        
+
         cursor.execute("SELECT COUNT(*) FROM responses")
         total_responses = cursor.fetchone()[0]
-        
+
         cursor.execute("SELECT source, COUNT(*) FROM responses GROUP BY source")
         source_stats = dict(cursor.fetchall())
-        
+
         conn.close()
-        
+
         return {
             "total_responses": total_responses,
             "source_breakdown": source_stats,
             "cache_size": len(response_cache),
-            "ai_enabled": AI_ENABLED
+            "ai_enabled": AI_ENABLED,
         }
     except Exception as e:
         logger.error(f"Stats error: {e}")
         return {"error": "Could not fetch stats"}
 
+
 if __name__ == "__main__":
     import uvicorn
+
     uvicorn.run(app, host="0.0.0.0", port=8000)
