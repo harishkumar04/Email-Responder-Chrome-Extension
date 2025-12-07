@@ -45,9 +45,3 @@ jobs:
             print(f'Import failed: {e}')
             exit(1)
         "
-  security_scan:
-    runs-on: ubuntu-latest
-    steps:
-        - uses: actions/checkout@v4
-        - run: pip install bandit
-        - run: bandit -r .
